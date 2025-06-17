@@ -47,17 +47,19 @@ func fetchDetail(id: Int) async throws -> PokemonDetail
 
 
 
-## 5. Arquitetura do aplicativo (diagrama MVVM):
+## 5. Arquitetura do aplicativo (MVVM):
 
-![image](https://github.com/user-attachments/assets/f366baaa-2850-4f61-b25c-479440422647)
+![image](https://github.com/user-attachments/assets/5701d20e-c63c-400e-bdd5-f00f55522445)
 
-1. **View** liga‑se ao **ViewModel** via `@ObservedObject` e reflete qualquer mudança de estado.  
-2. O **ViewModel** chama o **Repository** para obter ou gravar dados, mas nunca sabe de onde eles vêm.  
-3. O **Repository** decide qual fonte usar:  
-   * se o dado está no **CoreDataStore**, devolve imediatamente;  
-   * se precisa de dados novos, faz uma chamada ao **PokeAPIService**.  
-4. O **CoreDataStore** persiste tudo com NSPersistentContainer e SQLite; as consultas são feitas com `NSFetchRequest`.
+- View → ViewModel
+As Views se conecta ao ViewModels com @ObservedObject (ou @StateObject) e se atualizam automaticamente sempre que o estado muda.
 
+- ViewModel → Fontes de dados
+O ViewModel acessa os dados diretamente, sem camada intermediária:
+
+Se a informação depender de algo na CoreDataStore, ela é usada de imediato ou grava os dados no bando de dados SQLite.
+
+Se não depender, o ViewModel consulta o PokeAPIService, recebe os dados e então trata-os, retornando os com uma função
 
 
 ## 6. Implementação do Core Data:
