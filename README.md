@@ -47,7 +47,7 @@ func fetchDetail(id: Int) async throws -> PokemonDetail
 
 
 
-## 5. Arquitetura do aplicativo (diagrama MVVM)
+## 5. Arquitetura do aplicativo (diagrama MVVM):
 
 ```mermaid
 graph TD
@@ -69,7 +69,7 @@ graph TD
 
 
 
-## 6. Implementação do SwiftData
+## 6. Implementação do SwiftData:
 
 #### Modelo de dados
 
@@ -129,7 +129,7 @@ Os tokens foram declarados como `enum` para garantir *type‑safety* e autocompl
 
 ---
 
-## 8. Implementação do item de criatividade
+## 8. Implementação do item de criatividade:
 
 #### 8.1 Paginação infinita
 
@@ -184,7 +184,7 @@ final class ImageCacheManager {
 
 ---
 
-## 9. Bibliotecas de terceiros utilizadas
+## 9. Bibliotecas de terceiros utilizadas:
 
 | Biblioteca | Uso | Licença |
 |------------|-----|---------|
