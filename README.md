@@ -62,19 +62,19 @@ func fetchDetail(id: Int) async throws -> PokemonDetail
 
 ## 6. Implementação do Core Data:
 
-#### 6.1 Modelo de Dados:
+#### 6.1 Modelo de dados
 
 O modelo de dados foi definido através do arquivo `.xcdatamodeld`, onde foram criadas duas entidades principais:
 
 | Entidade  | Atributos                                          | Finalidade                              |
 |-----------|----------------------------------------------------|-----------------------------------------|
-| `Usuario` | `id: UUID`, `username: String`, `email: String`, `senhaHash: String` | Representa o usuário autenticado |
+| `Usuario` | `id: UUID`, `username: String`, `email: String`, `senha: String` | Representa o usuário autenticado |
 | `Favorito` | `id: Int`, `name: String`, `url: String`, `ownerID: UUID`         | Representa um Pokémon favoritado pelo usuário |
 
 Essas entidades são convertidas automaticamente em subclasses de `NSManagedObject` e utilizadas nas operações de persistência e consulta.
 
 
-#### 6.2 Como os dados são salvos:
+#### 6.2 Como os dados são salvos
 
 O projeto utiliza um singleton chamado `PersistenceController`, que instancia um `NSPersistentContainer`:
 
@@ -94,18 +94,18 @@ Exemplo de como um usuário é salvo:
 let usuario = Usuario(context: viewContext)
 usuario.username = nome
 usuario.email = email
-usuario.senhaHash = gerarHash(senha)
+usuario.senha = senha
 try? viewContext.save()
 ```
 
 
-#### 6.3 Como os dados são buscados:
+#### 6.3 Como os dados são buscados
 
 As consultas são realizadas com `NSFetchRequest`. Por exemplo, para buscar um usuário por e-mail e senha:
 
 ```swift
 let request = Usuario.fetchRequest()
-request.predicate = NSPredicate(format: "email == %@ AND senhaHash == %@", email, hash)
+request.predicate = NSPredicate(format: "email == %@ AND senha == %@", email)
 let resultados = try viewContext.fetch(request)
 ```
 
@@ -118,17 +118,15 @@ let favoritos = try viewContext.fetch(request)
 ```
 
 
-
-#### 6.4 Como a autenticação foi implementada:
+#### 6.4 Como a autenticação foi implementada
 
 O processo de autenticação funciona da seguinte forma:
 
 1. **Cadastro:**  
-   - A senha digitada é convertida em hash com uma função de segurança.
    - Um objeto `Usuario` é criado e salvo no banco de dados.
 
 2. **Login:**  
-   - Durante o login, o app busca por um usuário com o e-mail informado e o hash da senha.
+   - Durante o login, o app busca por um usuário com o e-mail informado e o senha.
    - Se encontrado, o `UUID` do usuário é armazenado localmente (em `UserDefaults`), permitindo manter a sessão ativa.
 
 3. **Sessão ativa:**  
@@ -163,7 +161,7 @@ Os tokens foram declarados como `enum` para garantir *type‑safety* e autocompl
 
 ## 8. Implementação do item de criatividade:
 
-#### 8.1 Paginação infinita
+#### 8.1 Paginação ou scroll infinito
 
 ```swift
 @MainActor
