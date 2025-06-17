@@ -126,7 +126,7 @@ O processo de autenticação funciona da seguinte forma:
    - Um objeto `Usuario` é criado e salvo no banco de dados.
 
 2. **Login:**  
-   - Durante o login, o app busca por um usuário com o e-mail informado e o senha.
+   - Durante o login, o app busca por um usuário com o e-mail informado e senha.
    - Se encontrado, o `UUID` do usuário é armazenado localmente (em `UserDefaults`), permitindo manter a sessão ativa.
 
 3. **Sessão ativa:**  
