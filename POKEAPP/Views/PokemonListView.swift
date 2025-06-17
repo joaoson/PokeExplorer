@@ -8,7 +8,6 @@ import SwiftUI
 
 struct PokemonListView: View {
     @StateObject private var viewModel = PokemonViewModel()
-    let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
     @State private var isInitialLoading = true
     @State private var pokeballRotation: Double = 0
@@ -20,15 +19,17 @@ struct PokemonListView: View {
     @State private var isPaginationMode = false
 
     var body: some View {
-        ZStack {
-            backgroundView
-            
-            if showList {
-                mainContentView
-            }
-            
-            if isInitialLoading {
-                loadingOverlayView
+        GeometryReader { geometry in
+            ZStack {
+                backgroundView
+                
+                if showList {
+                    mainContentView(geometry: geometry)
+                }
+                
+                if isInitialLoading {
+                    loadingOverlayView
+                }
             }
         }
         .navigationTitle("Pokédex")
@@ -36,6 +37,34 @@ struct PokemonListView: View {
         .task {
             await loadWithAnimation()
         }
+    }
+    
+    // MARK: - Adaptive Grid Columns
+    
+    private func adaptiveColumns(for geometry: GeometryProxy) -> [GridItem] {
+        let width = geometry.size.width
+        let isLandscape = geometry.size.width > geometry.size.height
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        
+        var columnCount: Int
+        
+        if isPad {
+            // iPad configurations
+            if isLandscape {
+                columnCount = width > 1200 ? 6 : 5  // Large iPad Pro in landscape gets 6, others get 5
+            } else {
+                columnCount = width > 900 ? 4 : 3   // Large iPad Pro in portrait gets 4, others get 3
+            }
+        } else {
+            // iPhone configurations
+            if isLandscape {
+                columnCount = width > 700 ? 4 : 3   // iPhone Pro Max landscape gets 4, others get 3
+            } else {
+                columnCount = 2                     // iPhone portrait stays at 2
+            }
+        }
+        
+        return Array(repeating: GridItem(.flexible(), spacing: 16), count: columnCount)
     }
     
     // MARK: - Extracted Views
@@ -79,12 +108,12 @@ struct PokemonListView: View {
         }
     }
     
-    private var mainContentView: some View {
+    private func mainContentView(geometry: GeometryProxy) -> some View {
         Group {
             if viewModel.pokemons.isEmpty && !viewModel.isLoading {
                 emptyStateView
             } else {
-                pokemonListView
+                pokemonListView(geometry: geometry)
             }
         }
     }
@@ -175,7 +204,7 @@ struct PokemonListView: View {
         }
     }
     
-    private var pokemonListView: some View {
+    private func pokemonListView(geometry: GeometryProxy) -> some View {
         VStack(spacing: 0) {
             // Enhanced Mode Toggle
             ModeToggleView(isPaginationMode: $isPaginationMode) {
@@ -183,25 +212,30 @@ struct PokemonListView: View {
                     await viewModel.switchMode(toPagination: isPaginationMode)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, adaptivePadding(for: geometry))
             .padding(.vertical, 12)
             
             // Pokemon Grid with enhanced styling
-            pokemonScrollView
+            pokemonScrollView(geometry: geometry)
             
             // Bottom Controls
             bottomControlsView
         }
     }
     
-    private var pokemonScrollView: some View {
+    private func pokemonScrollView(geometry: GeometryProxy) -> some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.pokemons) { pokemon in
+            LazyVGrid(columns: adaptiveColumns(for: geometry), spacing: adaptiveSpacing(for: geometry)) {
+                ForEach(Array(viewModel.pokemons.enumerated()), id: \.element.id) { index, pokemon in
                     NavigationLink(destination: destinationView(for: pokemon)) {
-                        PokemonCardView(pokemon: pokemon)
+                        PokemonCardView(pokemon: pokemon, geometry: geometry)
                             .onAppear {
-                                if !isPaginationMode && pokemon.id == viewModel.pokemons.last?.id {
+                                // FIXED: Check if this is one of the last 3 items instead of just the last
+                                if !isPaginationMode &&
+                                   !viewModel.isLoadingMore &&
+                                   viewModel.hasMoreData &&
+                                   index >= viewModel.pokemons.count - 3 {
+                                    print("🔄 Loading more Pokemon - triggered at index \(index) of \(viewModel.pokemons.count)")
                                     Task {
                                         await viewModel.loadMorePokemons()
                                     }
@@ -210,11 +244,35 @@ struct PokemonListView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, adaptivePadding(for: geometry))
         }
         .scrollIndicators(.hidden)
         .refreshable {
             await viewModel.refreshPokemons()
+        }
+    }
+    
+    // MARK: - Adaptive Layout Helpers
+    
+    private func adaptivePadding(for geometry: GeometryProxy) -> CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLandscape = geometry.size.width > geometry.size.height
+        
+        if isPad {
+            return isLandscape ? 40 : 30
+        } else {
+            return isLandscape ? 25 : 20
+        }
+    }
+    
+    private func adaptiveSpacing(for geometry: GeometryProxy) -> CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLandscape = geometry.size.width > geometry.size.height
+        
+        if isPad {
+            return isLandscape ? 20 : 16
+        } else {
+            return isLandscape ? 12 : 16
         }
     }
     
@@ -396,7 +454,7 @@ struct ModeToggleView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background {
-                if !isPaginationMode {  // Fixed: was isPaginationMode
+                if !isPaginationMode {  // FIXED: Show active state when NOT in pagination mode
                     LinearGradient(
                         gradient: Gradient(colors: [.blue, .purple]),
                         startPoint: .leading,
@@ -406,7 +464,7 @@ struct ModeToggleView: View {
                     Color.clear
                 }
             }
-            .foregroundColor(isPaginationMode ? .white.opacity(0.7) : .white)
+            .foregroundColor(!isPaginationMode ? .white : .white.opacity(0.7))  // FIXED: Show white when active
         }
     }
     
@@ -426,7 +484,7 @@ struct ModeToggleView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background {
-                if isPaginationMode {  // Fixed: was !isPaginationMode
+                if isPaginationMode {  // FIXED: Show active state when IN pagination mode
                     LinearGradient(
                         gradient: Gradient(colors: [.blue, .purple]),
                         startPoint: .leading,
@@ -436,9 +494,10 @@ struct ModeToggleView: View {
                     Color.clear
                 }
             }
-            .foregroundColor(isPaginationMode ? .white : .white.opacity(0.7))  // Fixed: swapped conditions
+            .foregroundColor(isPaginationMode ? .white : .white.opacity(0.7))  // FIXED: Show white when active
         }
     }
+
 }
 
 // MARK: - Enhanced Pagination Controls View
@@ -631,43 +690,105 @@ struct InfiniteScrollControlsView: View {
     }
 }
 
-// MARK: - Enhanced Pokemon Card View
+// MARK: - Enhanced Pokemon Card View with Adaptive Sizing
 
 struct PokemonCardView: View {
     let pokemon: PokemonListEntry
+    let geometry: GeometryProxy
     let onTap: (() -> Void)?
     @State private var isPressed = false
-    init(pokemon: PokemonListEntry, onTap: (() -> Void)? = nil) {
-            self.pokemon = pokemon
-            self.onTap = onTap
-        }
+    
+    init(pokemon: PokemonListEntry, geometry: GeometryProxy, onTap: (() -> Void)? = nil) {
+        self.pokemon = pokemon
+        self.geometry = geometry
+        self.onTap = onTap
+    }
+    
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: adaptiveSpacing) {
             pokemonImageView
             pokemonInfoView
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 20)
+        .padding(.horizontal, adaptivePadding)
+        .padding(.vertical, adaptivePadding * 1.2)
         .background(cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(adaptiveCornerRadius)
         .overlay(cardBorder)
-        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.15), radius: adaptiveShadowRadius, x: 0, y: 4)
         .scaleEffect(isPressed ? 0.95 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isPressed)
+    }
+    
+    // MARK: - Adaptive Properties
+    
+    private var adaptiveImageSize: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLandscape = geometry.size.width > geometry.size.height
         
+        if isPad {
+            return isLandscape ? 80 : 90
+        } else {
+            return isLandscape ? 70 : 90
+        }
+    }
+    
+    private var adaptiveGlowSize: CGFloat {
+        adaptiveImageSize + 20
+    }
+    
+    private var adaptivePadding: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        return isPad ? 14 : 12
+    }
+    
+    private var adaptiveSpacing: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        return isPad ? 10 : 8
+    }
+    
+    private var adaptiveCornerRadius: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        return isPad ? 18 : 16
+    }
+    
+    private var adaptiveShadowRadius: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        return isPad ? 10 : 8
+    }
+    
+    private var adaptiveFontSize: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLandscape = geometry.size.width > geometry.size.height
+        
+        if isPad {
+            return isLandscape ? 16 : 18
+        } else {
+            return isLandscape ? 14 : 16
+        }
+    }
+    
+    private var adaptiveIdFontSize: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLandscape = geometry.size.width > geometry.size.height
+        
+        if isPad {
+            return isLandscape ? 12 : 14
+        } else {
+            return isLandscape ? 10 : 12
+        }
     }
     
     private var pokemonImageView: some View {
         ZStack {
             Circle()
                 .fill(glowGradient)
-                .frame(width: 120, height: 120)
+                .frame(width: adaptiveGlowSize, height: adaptiveGlowSize)
             
             CachedAsyncImage(url: pokemon.imageURL) { image in
                 image
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 100, height: 100)
+                    .frame(width: adaptiveImageSize, height: adaptiveImageSize)
                     .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
             } placeholder: {
                 placeholderView
@@ -683,8 +804,8 @@ struct PokemonCardView: View {
                 Color.clear
             ]),
             center: .center,
-            startRadius: 30,
-            endRadius: 80
+            startRadius: adaptiveGlowSize * 0.25,
+            endRadius: adaptiveGlowSize * 0.67
         )
     }
     
@@ -692,35 +813,36 @@ struct PokemonCardView: View {
         ZStack {
             Circle()
                 .fill(Color.white.opacity(0.2))
-                .frame(width: 100, height: 100)
+                .frame(width: adaptiveImageSize, height: adaptiveImageSize)
             
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 ProgressView()
-                    .scaleEffect(0.8)
+                    .scaleEffect(0.7)
                     .tint(.white)
                 Text("Loading...")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.7))
             }
         }
     }
     
     private var pokemonInfoView: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             Text(pokemon.name.capitalized)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(size: adaptiveFontSize, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .shadow(color: .black.opacity(0.3), radius: 1, x: 0, y: 1)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
             
             HStack {
                 Text("#\(pokemon.id)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: adaptiveIdFontSize, weight: .semibold))
                     .foregroundColor(.white.opacity(0.8))
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.2))
-                    .cornerRadius(8)
+                    .cornerRadius(6)
             }
         }
     }
