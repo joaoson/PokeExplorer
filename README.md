@@ -6,7 +6,7 @@
 - João Vitor de Freitas
 - Théo Nicoleli
 
-## 2. Link do vídeo: 
+## 2. Demonstração em vídeo: 
 Funcionamento completo do aplicativo no YouTube:  
 [PokéExplorer](https://youtu.be/[https://www.youtube.com/watch?v=YTS854zc8ug)
 
@@ -26,7 +26,7 @@ O **PokéExplorer** é um aplicativo iOS (Swift + SwiftUI) que:
 
 Utilizamos a PokéAPI porque é pública e gratuita, fornece dados abrangentes da franquia Pokémon e tem respostas JSON simples, facilitando o uso de `Codable`.
 
-#### Como usamos a API
+#### 4.1 Como usamos a API
 
 * `PokeAPIService` é um `Singleton` com **async/await** que expõe dois métodos principais:  
 
@@ -38,7 +38,7 @@ func fetchDetail(id: Int) async throws -> PokemonDetail
 * A lista principal chama `fetchPage` sempre que precisa de uma nova página.  
 * A tela de detalhes chama `fetchDetail` apenas para o Pokémon selecionado, evitando tráfego desnecessário.
 
-#### Endpoints e campos utilizados
+#### 4.2 Endpoints e campos utilizados
 
 | Endpoint | Uso | Campos |
 |----------|-----|--------|
@@ -49,57 +49,90 @@ func fetchDetail(id: Int) async throws -> PokemonDetail
 
 ## 5. Arquitetura do aplicativo (diagrama MVVM):
 
-```mermaid
-graph TD
-    View["SwiftUI Views"] -->|binds| ViewModel
-    ViewModel -->|fetch / save| Repository
-    Repository -->|HTTP| PokeAPIService
-    Repository -->|CRUD| SwiftDataStore
-    PokeAPIService --> PokéAPI
-    SwiftDataStore --> SQLite
-```
+![image](https://github.com/user-attachments/assets/f366baaa-2850-4f61-b25c-479440422647)
 
 1. **View** liga‑se ao **ViewModel** via `@ObservedObject` e reflete qualquer mudança de estado.  
 2. O **ViewModel** chama o **Repository** para obter ou gravar dados, mas nunca sabe de onde eles vêm.  
-3. O **Repository** decide:  
-   * se o dado está no **SwiftDataStore**, devolve imediatamente;  
+3. O **Repository** decide qual fonte usar:  
+   * se o dado está no **CoreDataStore**, devolve imediatamente;  
    * se precisa de dados novos, faz uma chamada ao **PokeAPIService**.  
-4. O **SwiftDataStore** persiste tudo em SQLite; consultas são reativas a partir de `@Query`.  
+4. O **CoreDataStore** persiste tudo com NSPersistentContainer e SQLite; as consultas são feitas com `NSFetchRequest`.
 
 
 
+## 6. Implementação do Core Data:
 
-## 6. Implementação do SwiftData:
+#### 6.1 Modelo de Dados:
 
-#### Modelo de dados
+O modelo de dados foi definido através do arquivo `.xcdatamodeld`, onde foram criadas duas entidades principais:
+
+| Entidade  | Atributos                                          | Finalidade                              |
+|-----------|----------------------------------------------------|-----------------------------------------|
+| `Usuario` | `id: UUID`, `username: String`, `email: String`, `senhaHash: String` | Representa o usuário autenticado |
+| `Favorito` | `id: Int`, `name: String`, `url: String`, `ownerID: UUID`         | Representa um Pokémon favoritado pelo usuário |
+
+Essas entidades são convertidas automaticamente em subclasses de `NSManagedObject` e utilizadas nas operações de persistência e consulta.
+
+
+#### 6.2 Como os dados são salvos:
+
+O projeto utiliza um singleton chamado `PersistenceController`, que instancia um `NSPersistentContainer`:
 
 ```swift
-@Model
-final class Usuario {
-    @Attribute(.unique) var id: UUID = .init()
-    @Attribute(.unique) var email: String
-    var username: String
-    var senhaHash: String            // PBKDF2 + salt
-}
-
-@Model
-final class Favorito {
-    @Attribute(.unique) var id: Int  // Pokémon ID
-    var ownerID: UUID                // FK → Usuario.id
-    var name: String
-    var url: String
+let container = NSPersistentContainer(name: "PokeAppModel")
+container.loadPersistentStores { description, error in
+    if let error = error {
+        fatalError("Erro ao carregar Core Data: \(error)")
+    }
 }
 ```
 
-#### Como os dados são salvos e buscados
+Essa estrutura carrega e gerencia o contexto de persistência (`viewContext`) usado para inserir e salvar dados.  
+Exemplo de como um usuário é salvo:
 
-* **Salvar**: `Context.insert()` seguido de `try context.save()` grava no SQLite.  
-* **Buscar**: `@Query` em SwiftUI ou `FetchDescriptor` no repositório retornam entidades filtradas.  
-* **Autenticação**:  
-  1. No cadastro, geramos `senhaHash` com `CryptoKit` e salvamos o objeto `Usuario`.  
-  2. No login, filtramos por `email` + `senhaHash`; se encontrado, gravamos o `UUID` no `UserDefaults` para manter sessão.  
+```swift
+let usuario = Usuario(context: viewContext)
+usuario.username = nome
+usuario.email = email
+usuario.senhaHash = gerarHash(senha)
+try? viewContext.save()
+```
 
-Chamadas CRUD ficam encapsuladas em `AuthRepository` e `PokemonRepository`, mantendo a UI livre de lógica de banco.
+
+#### 6.3 Como os dados são buscados:
+
+As consultas são realizadas com `NSFetchRequest`. Por exemplo, para buscar um usuário por e-mail e senha:
+
+```swift
+let request = Usuario.fetchRequest()
+request.predicate = NSPredicate(format: "email == %@ AND senhaHash == %@", email, hash)
+let resultados = try viewContext.fetch(request)
+```
+
+Esse padrão também é usado para carregar os Pokémon favoritos de um usuário específico:
+
+```swift
+let request = Favorito.fetchRequest()
+request.predicate = NSPredicate(format: "ownerID == %@", userID as CVarArg)
+let favoritos = try viewContext.fetch(request)
+```
+
+
+
+#### 6.4 Como a autenticação foi implementada:
+
+O processo de autenticação funciona da seguinte forma:
+
+1. **Cadastro:**  
+   - A senha digitada é convertida em hash com uma função de segurança.
+   - Um objeto `Usuario` é criado e salvo no banco de dados.
+
+2. **Login:**  
+   - Durante o login, o app busca por um usuário com o e-mail informado e o hash da senha.
+   - Se encontrado, o `UUID` do usuário é armazenado localmente (em `UserDefaults`), permitindo manter a sessão ativa.
+
+3. **Sessão ativa:**  
+   - O `UUID` armazenado é reutilizado para filtrar favoritos e exibir apenas os do usuário logado.
 
 
 
@@ -127,7 +160,6 @@ enum SpacingToken: CGFloat {
 
 Os tokens foram declarados como `enum` para garantir *type‑safety* e autocomplete. Qualquer componente visual utiliza essas constantes — por exemplo, títulos usam `FontToken.title` e botões principais usam `ColorToken.brandBlue`. Dessa forma, mudar a identidade visual exige alterações em um único arquivo, propagando-se automaticamente pela base de código.
 
----
 
 ## 8. Implementação do item de criatividade:
 
@@ -182,7 +214,6 @@ final class ImageCacheManager {
 }
 ```
 
----
 
 ## 9. Bibliotecas de terceiros utilizadas:
 
